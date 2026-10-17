@@ -8,9 +8,14 @@ import sys
 import asyncio
 from datetime import datetime
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
+    go = None
+    px = None
 import streamlit as st
 
 # Ensure root directory is on PYTHONPATH
@@ -330,20 +335,23 @@ with tab_overview:
         sec_df = pd.DataFrame(list(sectors_data.values()))
         sec_df = sec_df.sort_values(by="average_change_percent", ascending=True)
         
-        fig_sec = go.Figure(go.Bar(
-            x=sec_df["average_change_percent"],
-            y=sec_df["sector"],
-            orientation="h",
-            marker=dict(
-                color=sec_df["average_change_percent"].apply(lambda x: "#10b981" if x >= 0 else "#ef4444")
-            ),
-            text=sec_df["average_change_percent"].apply(lambda x: f"{x:+.2f}%"),
-            textposition="auto",
-        ))
-        layout = get_plotly_layout(height=280)
-        layout["xaxis"]["title"] = "Average Return %"
-        fig_sec.update_layout(layout)
-        st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
+        if HAS_PLOTLY:
+            fig_sec = go.Figure(go.Bar(
+                x=sec_df["average_change_percent"],
+                y=sec_df["sector"],
+                orientation="h",
+                marker=dict(
+                    color=sec_df["average_change_percent"].apply(lambda x: "#10b981" if x >= 0 else "#ef4444")
+                ),
+                text=sec_df["average_change_percent"].apply(lambda x: f"{x:+.2f}%"),
+                textposition="auto",
+            ))
+            layout = get_plotly_layout(height=280)
+            layout["xaxis"]["title"] = "Average Return %"
+            fig_sec.update_layout(layout)
+            st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.bar_chart(sec_df.set_index("sector")["average_change_percent"], height=280)
         st.markdown("</div>", unsafe_allow_html=True)
         
     with col_right:
@@ -356,18 +364,22 @@ with tab_overview:
         dec = indices.declines
         unc = indices.unchanged
         
-        fig_breadth = go.Figure(go.Pie(
-            labels=["Advances", "Declines", "Unchanged"],
-            values=[adv, dec, unc],
-            hole=0.65,
-            marker=dict(colors=["#10b981", "#ef4444", "#64748b"]),
-            textinfo="value",
-        ))
-        b_layout = get_plotly_layout(height=180)
-        b_layout["showlegend"] = True
-        b_layout["legend"] = dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
-        fig_breadth.update_layout(b_layout)
-        st.plotly_chart(fig_breadth, use_container_width=True, config={"displayModeBar": False})
+        if HAS_PLOTLY:
+            fig_breadth = go.Figure(go.Pie(
+                labels=["Advances", "Declines", "Unchanged"],
+                values=[adv, dec, unc],
+                hole=0.65,
+                marker=dict(colors=["#10b981", "#ef4444", "#64748b"]),
+                textinfo="value",
+            ))
+            b_layout = get_plotly_layout(height=180)
+            b_layout["showlegend"] = True
+            b_layout["legend"] = dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            fig_breadth.update_layout(b_layout)
+            st.plotly_chart(fig_breadth, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.metric("Advances", f"{adv} Stocks", f"+{adv}")
+            st.metric("Declines", f"{dec} Stocks", f"-{dec}", delta_color="inverse")
         
         sorted_quotes = sorted(quotes, key=lambda x: x.change_percent, reverse=True)
         st.markdown(f"""
@@ -426,24 +438,27 @@ with tab_fii:
     
     with c_fii1:
         st.markdown("<div class='card-panel'><div class='card-title'>Daily Net Cash Flow (₹ Crores)</div>", unsafe_allow_html=True)
-        fig_flow = go.Figure()
-        fig_flow.add_trace(go.Bar(
-            name="FII Net Cash",
-            x=fii_df["date"],
-            y=fii_df["fii_cash_net"],
-            marker_color=["#10b981" if v >= 0 else "#ef4444" for v in fii_df["fii_cash_net"]],
-        ))
-        fig_flow.add_trace(go.Bar(
-            name="DII Net Cash",
-            x=fii_df["date"],
-            y=fii_df["dii_cash_net"],
-            marker_color="#3b82f6",
-        ))
-        flow_layout = get_plotly_layout(height=300)
-        flow_layout["barmode"] = "group"
-        flow_layout["showlegend"] = True
-        fig_flow.update_layout(flow_layout)
-        st.plotly_chart(fig_flow, use_container_width=True, config={"displayModeBar": False})
+        if HAS_PLOTLY:
+            fig_flow = go.Figure()
+            fig_flow.add_trace(go.Bar(
+                name="FII Net Cash",
+                x=fii_df["date"],
+                y=fii_df["fii_cash_net"],
+                marker_color=["#10b981" if v >= 0 else "#ef4444" for v in fii_df["fii_cash_net"]],
+            ))
+            fig_flow.add_trace(go.Bar(
+                name="DII Net Cash",
+                x=fii_df["date"],
+                y=fii_df["dii_cash_net"],
+                marker_color="#3b82f6",
+            ))
+            flow_layout = get_plotly_layout(height=300)
+            flow_layout["barmode"] = "group"
+            flow_layout["showlegend"] = True
+            fig_flow.update_layout(flow_layout)
+            st.plotly_chart(fig_flow, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.bar_chart(fii_df.set_index("date")[["fii_cash_net", "dii_cash_net"]], height=300)
         st.markdown("</div>", unsafe_allow_html=True)
         
     with c_fii2:
@@ -451,27 +466,31 @@ with tab_fii:
         latest_rec = fii_df.iloc[0]
         long_ratio = latest_rec["fii_long_short_ratio"] * 100
         
-        fig_gauge = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=long_ratio,
-            title={'text': "FII Long Ratio %", 'font': {'size': 14, 'color': '#94a3b8'}},
-            number={'suffix': "%", 'font': {'size': 32, 'color': '#f3f4f6'}},
-            gauge={
-                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#94a3b8"},
-                'bar': {'color': "#3b82f6"},
-                'bgcolor': "#121722",
-                'borderwidth': 1,
-                'bordercolor': "#1f293d",
-                'steps': [
-                    {'range': [0, 30], 'color': 'rgba(239, 68, 68, 0.2)'},
-                    {'range': [30, 70], 'color': 'rgba(59, 130, 246, 0.2)'},
-                    {'range': [70, 100], 'color': 'rgba(16, 185, 129, 0.2)'},
-                ],
-            }
-        ))
-        g_layout = get_plotly_layout(height=240)
-        fig_gauge.update_layout(g_layout)
-        st.plotly_chart(fig_gauge, use_container_width=True, config={"displayModeBar": False})
+        if HAS_PLOTLY:
+            fig_gauge = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=long_ratio,
+                title={'text': "FII Long Ratio %", 'font': {'size': 14, 'color': '#94a3b8'}},
+                number={'suffix': "%", 'font': {'size': 32, 'color': '#f3f4f6'}},
+                gauge={
+                    'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#94a3b8"},
+                    'bar': {'color': "#3b82f6"},
+                    'bgcolor': "#121722",
+                    'borderwidth': 1,
+                    'bordercolor': "#1f293d",
+                    'steps': [
+                        {'range': [0, 30], 'color': 'rgba(239, 68, 68, 0.2)'},
+                        {'range': [30, 70], 'color': 'rgba(59, 130, 246, 0.2)'},
+                        {'range': [70, 100], 'color': 'rgba(16, 185, 129, 0.2)'},
+                    ],
+                }
+            ))
+            g_layout = get_plotly_layout(height=240)
+            fig_gauge.update_layout(g_layout)
+            st.plotly_chart(fig_gauge, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.metric("FII Long Ratio", f"{long_ratio:.1f}%")
+            st.progress(min(max(long_ratio / 100.0, 0.0), 1.0))
         
         st.markdown(f"""
         <div style="font-size: 0.8rem; font-family: monospace; color: #94a3b8; text-align: center;">
