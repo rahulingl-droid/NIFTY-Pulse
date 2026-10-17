@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  nifty-pulse:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: nifty-pulse-app
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - AZURE_REGION=centralindia
+      - MARKET_TICK_INTERVAL_SEC=3
+      - AGENT_SCAN_INTERVAL_SEC=30
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

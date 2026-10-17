@@ -1,0 +1,83 @@
+# ==============================================================================
+# Azure DevOps CI/CD Pipeline for NIFTY-Pulse Platform
+# Stages:
+#   1. Test: Run pytest suite & guardrail verification
+#   2. Build & Push: Build container image to Azure Container Registry (ACR)
+#   3. Deploy: Deploy Azure Container App in centralindia
+# ==============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+
+variables:
+  azureServiceConnection: 'Azure-DevOps-Connection'
+  resourceGroupName: 'rg-nifty-pulse-prod'
+  location: 'centralindia'
+  acrName: 'acrniftypulse'
+  imageRepository: 'nifty-pulse'
+  dockerfilePath: '$(Build.SourcesDirectory)/deployment/docker/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+stages:
+  - stage: Test
+    displayName: 'Run Automated Tests & Guardrail Verification'
+    jobs:
+      - job: PyTest
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.9'
+          - script: |
+              python -m pip install --upgrade pip
+              pip install -r requirements.txt pytest httpx
+              PYTHONPATH=. pytest backend/tests/ -v
+            displayName: 'Run Pytest Suite'
+
+  - stage: Build
+    displayName: 'Build & Push Docker Container'
+    dependsOn: Test
+    condition: succeeded()
+    jobs:
+      - job: DockerBuild
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az acr build \
+                  --registry $(acrName) \
+                  --image $(imageRepository):$(tag) \
+                  --image $(imageRepository):latest \
+                  -f $(dockerfilePath) .
+            displayName: 'Build & Push to ACR'
+
+  - stage: Deploy
+    displayName: 'Deploy to Azure Container Apps'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - job: DeployContainerApp
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                LOGIN_SERVER=$(az acr show --name $(acrName) --query loginServer -o tsv)
+                az deployment group create \
+                  --resource-group $(resourceGroupName) \
+                  --template-file deployment/azure/main.bicep \
+                  --parameters location=$(location) containerImage="${LOGIN_SERVER}/$(imageRepository):$(tag)"
+            displayName: 'Deploy Bicep to Azure Container Apps'
